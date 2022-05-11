@@ -2,6 +2,7 @@
 
 import math
 import json
+import requests
 
 # consts
 # start time
@@ -13,12 +14,18 @@ burnMult = 4/3
 # cp earn rate
 cpRate = 20
 
-def loadData():
-    # todo
-    # replace with curl
-    f = open("./bandori", "r")
-    j = json.loads(f.read())
+# vars
+server = 1
+event = 97
+interval = 60000
 
+def loadData(server, event, interval):
+    # test
+    # f = open("./e97.json", "r")
+    # j = json.loads(f.read())
+
+    # prod
+    j = requests.get(f'https://bestdori.com/api/eventtop/data?server={server}&event={event}&mid=0&interval={interval}').json()
     # {
     #   "points": [
     #       {"time": n, "uid": n, "value": n}, ...
@@ -85,7 +92,10 @@ def calcCp(normalized):
     return (cpHigh, cpMid)
 
 def main():
-    data = loadData()
+    # todo
+    # cli input
+
+    data = loadData(server, event, interval)
 
     points = data["points"]
     last10 = points[-10:]
@@ -96,8 +106,8 @@ def main():
 
     # top 10 users, list of (dt from start, dv from previous, value)
     t10: dict[str, list] = { e["uid"] : [] for e in last10 }
-    print(t10.keys())
 
+    # aggregate top 10 user data
     for p in points:
         uid = p["uid"]
         if uid in t10.keys():
