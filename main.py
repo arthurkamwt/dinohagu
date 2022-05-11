@@ -1,42 +1,30 @@
-#! python
+#! python3.9
 
 import math
 import json
 import requests
 
 # consts
-# start time
-st = 1605834126000
 # song duration + slack, in ms
-dur = 150000
+duration = 150000
 # multiplier from 3f to 200
-burnMult = 4/3
+defaultMult = 4/3
 # cp earn rate
-cpRate = 20
+cpepRate = 20
 
 # vars
 server = 1
-event = 97
+event = 153
 interval = 60000
+# startTime = 1605834126000 # e97
+startTime = 1652230800000 # e153
 
-def loadData(server, event, interval):
-    # test
-    # f = open("./e97.json", "r")
-    # j = json.loads(f.read())
 
-    # prod
-    j = requests.get(f'https://bestdori.com/api/eventtop/data?server={server}&event={event}&mid=0&interval={interval}').json()
-    # {
-    #   "points": [
-    #       {"time": n, "uid": n, "value": n}, ...
-    #   ],
-    #   "users": [
-    #       {"uid": n, "name": s, ...}, ...
-    #   ]
-    # }
-    return j
+###########################
+# Classes / class helpers #
+###########################
 
-def binPoints(points: list):
+def binPoints(points: list[tuple[int, int]]) -> tuple[list[int], list[int], list[int], list[int]]:
     # 3f, 200, 400, 800
     bins = ([], [], [], [])
     for p in points:
@@ -49,55 +37,212 @@ def binPoints(points: list):
             bins[2].append(dv)
         else:
             bins[3].append(dv)
-
     return bins
 
-def calcCp(normalized):
-    dt = normalized[-1][0]
-    total = normalized[-1][2]
+class UserData:
+    def __init__(self, uid: str, rawTsd: list[tuple[int, int]]):
+        self.uid = uid
+        # self.rawTsd = []
+        # self.normTsd = []
+        # self.zeroes = 0
+        # self.bins = ([], [], [], [])
+        self.setTsd(rawTsd)
+    
+    # raw time series data: timestamp, value
+    def setTsd(self, rawTsd: list[tuple[int, int]]):
+        self.rawTsd = rawTsd
 
-    # get bins
-    bins = binPoints(normalized)
-    bin0Avg = sum(bins[0]) / len(bins[0]) if len(bins[0]) else 0
-    bin1Avg = sum(bins[1]) / len(bins[1]) if len(bins[1]) else 0
+        self.setNormalizeTsd()
+        self.setBinTsd()
 
-    # number of non-cp earning sessions
-    cpCount = len(bins[1]) + len(bins[2]) + len(bins[3])
-    # cp points
-    cpPoints = sum(bins[1]) + sum(bins[2]) + sum(bins[3])
+    # normtsd: dt, dv, maybe 2nd deriv?
+    def setNormalizeTsd(self):
+        normTsd: list[tuple[int, int]] = []
+        prevT = 0
+        prevV = 0
+        zeroes = 0
+        for raw in self.rawTsd:
+            nt = raw[0] - startTime
+            dt = nt - prevT
+            dv = raw[1] - prevV
+            if dt >= interval * 1.2: # uncertainty
+                # theres a skip
+                dv = math.ceil(dv * duration / dt)
 
-    # mult
-    mult = bin1Avg / bin0Avg if bin0Avg > 0 and bin1Avg > 0 else burnMult
+            # if dv > 0:
+            #     print("points/ms\t", math.ceil(dv * 1000 / dt), "\tdv\t", dv, "\tdt\t", dt)
 
-    # average binned ep
-    epDt = dt - (cpCount * dur)
-    epAvg = bin0Avg / dur * epDt
-    epTotal = total - cpPoints
-    ep = epAvg if epAvg > 0 else (epTotal if epTotal > 0 else total)
+            prevT = nt
+            prevV = raw[1]
 
-    # extrapolate based on
-    # ep + cp = total
-    # cp => n * ep / 20 / 200 * mult (where n = )
-    # n = (total - ep) / (ep * (mult / 20 / 200)) => 4000 * (total - ep) / (ep * mult)
-    n = 4000 * (total - ep) / (ep * mult)
-    # todo
-    # n affects epDt -> epAvg -> ep -> n
+            if dv != 0:
+                normTsd.append((nt, dv))
+            else:
+                zeroes += 1
 
-    # high, probable cp without consumption
-    cpHigh = math.ceil(ep / cpRate)
-    # mid, probable cp with consumption
-    cpMid = math.ceil(cpHigh - (n * 200))
+        self.normTsd = normTsd
+        self.zeroes = zeroes
 
-    # print(cpHigh, cpMid)
-    return (cpHigh, cpMid)
+    def setBinTsd(self):
+        self.bins = binPoints(self.normTsd)
+
+    #########
+    # Utils #
+    #########
+
+    def getTotal(self) -> int:
+        if len(self.rawTsd) > 0:
+            return self.rawTsd[-1][1]
+        else:
+            return 0
+
+    def getDt(self) -> int:
+        if len(self.normTsd) > 0:
+            return self.normTsd[-1][0]
+        else:
+            return 0
+
+    def getBinSums(self) -> tuple[int, int, int, int]:
+        return (
+            sum(self.bins[0]),
+            sum(self.bins[1]),
+            sum(self.bins[2]),
+            sum(self.bins[3])
+        )
+
+    def getBinCounts(self) -> tuple[int, int, int, int]:
+        return (
+            len(self.bins[0]),
+            len(self.bins[1]),
+            len(self.bins[2]),
+            len(self.bins[3])
+        )
+
+    def getZeroes(self) -> int:
+        return self.zeroes
+
+
+    #######
+    # *-* #
+    #######
+
+    def calculateCp(self):
+        total = self.getTotal()
+        dt = self.getDt()
+        sums = self.getBinSums()
+        counts = self.getBinCounts()
+        zeroes = self.getZeroes()
+
+        # avgs
+        avgs = (
+            math.ceil(sums[0] / counts[0]) if counts[0] > 0 else int(0),
+            math.ceil(sums[1] / counts[1]) if counts[1] > 0 else int(0),
+            math.ceil(sums[2] / counts[2]) if counts[2] > 0 else int(0),
+            math.ceil(sums[3] / counts[3]) if counts[3] > 0 else int(0)
+        )
+
+        # historical cp
+        # epp / 20 - n200 * 200 - n400 * 400 - n800 * 800
+        historicalCp = math.ceil(sums[0] / cpepRate) - (counts[1] * 200) - (counts[2] * 400) - (counts[3] * 800)
+
+
+        # extrapolation
+        exTotal = total - sum(sums)
+        # duration is kind of trash, maybe use zeroes to estimate duration too
+        # number of runs
+        exCount = (dt / duration) - sum(counts)
+        exEv = math.ceil(exTotal / exCount)
+
+        # print("common")
+        # print("\ttotal\t", total)
+        # print("\tdt\t", dt)
+        # print("\tavgs\t", avgs)
+        # print("\tsums\t", sums)
+        # print("\tcounts\t", counts)
+
+        # print("hist")
+        # print("\thistoricalCp\t", historicalCp)
+
+        # print("exs")
+        # print("\texTotal\t", exTotal)
+        # print("\texCount\t", exCount)
+        # print("\texEv\t", exEv)
+        # print()
+        # print("\tdt\t", dt)
+        # print("\tcount * dur\t", sum(counts) * duration)
+        # print("\tdt / dur\t", math.ceil(dt / duration))
+        # print("\tsum counts\t", sum(counts))
+
+        # cp/ep multiplier
+        cpepMult = avgs[1] / avgs[0] if avgs[0] > 0 else defaultMult
+
+        if (counts[0] > 0):
+            ev3f = avgs[0]
+        elif (counts[1] > 0):
+            ev3f = math.ceil(avgs[1] / cpepMult)
+        elif (counts[2] > 0):
+            ev3f = math.ceil(avgs[2] / (cpepMult * 2))
+        else:
+            ev3f = math.ceil(avgs[3] / (cpepMult * 4))
+        ev200 = avgs[1] if counts[1] > 0 else math.ceil(ev3f * cpepMult)
+        ev400 = avgs[2] if counts[2] > 0 else ev200 * 2
+        ev800 = avgs[3] if counts[3] > 0 else ev400 * 2
+
+        # percentage of cp plays
+        p200 = max(round((exEv - ev3f) / (ev200 - ev3f), 4), 0)
+        p400 = max(round((exEv - ev3f) / (ev400 - ev3f), 4), 0)
+        p800 = max(round((exEv - ev3f) / (ev800 - ev3f), 4), 0)
+
+        print("avgs\t", avgs)
+        print("exEv\t", exEv)
+        print("ex%cp\t", (p200, p400, p800))
+
+        # cp = count * ((1 - px) * ev3f / 20 - px * x), x E { 200, 400, 800 }
+        ev3f20 = math.ceil(ev3f / 20)
+
+        cp200 = math.ceil(exCount * ((1 - p200) * ev3f20 - (p200 * 200))) + historicalCp
+        cp400 = math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400))) + historicalCp
+        cp800 = math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800))) + historicalCp
+
+        return (cp200, cp400, cp800)
+
+
+###########
+# Helpers #
+###########
+
+def loadData(server: int, event: int, interval: int, isFile: bool):
+    fn = f'./e{event}.json'
+
+    if isFile:
+        # test
+        f = open(fn, "r")
+        j = json.loads(f.read())
+    else:
+        # prod
+        url = f'https://bestdori.com/api/eventtop/data?server={server}&event={event}&mid=0&interval={interval}'
+        print(url)
+        j = requests.get(url).json()
+        f = open(fn, "w")
+        f.write(json.dumps(j))
+    # {
+    #   "points": [
+    #       {"time": n, "uid": n, "value": n}, ...
+    #   ],
+    #   "users": [
+    #       {"uid": n, "name": s, ...}, ...
+    #   ]
+    # }
+    return j
 
 def main():
     # todo
     # cli input
 
-    data = loadData(server, event, interval)
+    data = loadData(server, event, interval, False)
 
     points = data["points"]
+
     last10 = points[-10:]
     # verify last 10 has same timestamp
     lastTs = last10[-1]["time"]
@@ -105,27 +250,26 @@ def main():
         assert last["time"] == lastTs
 
     # top 10 users, list of (dt from start, dv from previous, value)
+    # t10: dict[int, list] = { 3645020: [] }
     t10: dict[str, list] = { e["uid"] : [] for e in last10 }
 
     # aggregate top 10 user data
     for p in points:
         uid = p["uid"]
         if uid in t10.keys():
-            prev: int = t10[uid][-1][2] if len(t10[uid]) > 0 else int(0)
-            dt = int(p["time"]) - st
+            t = int(p["time"])
             v = int(p["value"])
-            dv = int(p["value"]) - prev
+            t10[uid].append((t, v))
+    
+    userData = { k : UserData(uid, v) for k, v in t10.items() }
 
-            # if has change
-            if dv != 0:
-                t10[uid].append((dt, dv, v))
+    users = data["users"]
+    userNames = { u["uid"] : u["name"] for u in users }
 
-    # why even bother
-    t10cp = {}
-    for tk, tv in t10.items():
-        t10cp[tk] = calcCp(tv)
-
-    print(t10cp)
+    for k, v in userData.items():
+        print("user\t", k, userNames[k])
+        print("cp (l,m,h)\t", v.calculateCp())
+        print()
 
 if __name__ == '__main__':
     main()
