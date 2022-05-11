@@ -132,22 +132,30 @@ class UserData:
         sums = self.getBinSums()
         counts = self.getBinCounts()
         zeroes = self.getZeroes()
+        sumss = sum(sums)
+
+        # zeroes
+        zeroess = (
+            round(zeroes * sums[0] / sumss),
+            round(zeroes * sums[1] / sumss),
+            round(zeroes * sums[2] / sumss),
+            round(zeroes * sums[3] / sumss)
+        )
 
         # avgs
         avgs = (
-            math.ceil(sums[0] / counts[0]) if counts[0] > 0 else int(0),
-            math.ceil(sums[1] / counts[1]) if counts[1] > 0 else int(0),
-            math.ceil(sums[2] / counts[2]) if counts[2] > 0 else int(0),
-            math.ceil(sums[3] / counts[3]) if counts[3] > 0 else int(0)
+            math.ceil(sums[0] / (counts[0] + zeroess[0]) * duration / 60000) if counts[0] > 0 else int(0),
+            math.ceil(sums[1] / (counts[1] + zeroess[1]) * duration / 60000) if counts[1] > 0 else int(0),
+            math.ceil(sums[2] / (counts[2] + zeroess[2]) * duration / 60000) if counts[2] > 0 else int(0),
+            math.ceil(sums[3] / (counts[3] + zeroess[3]) * duration / 60000) if counts[3] > 0 else int(0)
         )
 
         # historical cp
         # epp / 20 - n200 * 200 - n400 * 400 - n800 * 800
         historicalCp = math.ceil(sums[0] / cpepRate) - (counts[1] * 200) - (counts[2] * 400) - (counts[3] * 800)
 
-
         # extrapolation
-        exTotal = total - sum(sums)
+        exTotal = total - sumss
         # duration is kind of trash, maybe use zeroes to estimate duration too
         # number of runs
         exCount = (dt / duration) - sum(counts)
@@ -178,6 +186,7 @@ class UserData:
         print("\tavgs\t", avgs)
         print("\tsums\t", sums)
         print("\tcounts\t", counts)
+        print("\tzeroess\t", zeroess)
 
         print("hist")
         print("\thistoricalCp\t", historicalCp)
