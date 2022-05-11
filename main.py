@@ -1,5 +1,6 @@
 #! python3.9
 
+import datetime
 import math
 import json
 import requests
@@ -51,7 +52,6 @@ class UserData:
     # raw time series data: timestamp, value
     def setTsd(self, rawTsd: list[tuple[int, int]]):
         self.rawTsd = rawTsd
-
         self.setNormalizeTsd()
         self.setBinTsd()
 
@@ -126,7 +126,7 @@ class UserData:
     # *-* #
     #######
 
-    def calculateCp(self):
+    def calcAndPrintCps(self):
         total = self.getTotal()
         dt = self.getDt()
         sums = self.getBinSums()
@@ -200,18 +200,30 @@ class UserData:
         # cp = count * ((1 - px) * ev3f / 20 - px * x), x E { 200, 400, 800 }
         ev3f20 = math.ceil(ev3f / 20)
 
-        cp200 = math.ceil(exCount * ((1 - p200) * ev3f20 - (p200 * 200))) + historicalCp
-        cp400 = math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400))) + historicalCp
-        cp800 = math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800))) + historicalCp
+        cp200 = max(math.ceil(exCount * ((1 - p200) * ev3f20 - (p200 * 200))) + historicalCp, 0)
+        cp400 = max(math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400))) + historicalCp, 0)
+        cp800 = max(math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800))) + historicalCp, 0)
 
-        return (cp200, cp400, cp800)
+        print("----")
+        cps = (cp200, cp400, cp800)
+        print("cps\t", cps)
+        print("pot pts\t", (
+            math.ceil(cps[0] * ev800 / 800),
+            math.ceil(cps[1] * ev800 / 800),
+            math.ceil(cps[2] * ev800 / 800)
+        ))
+        print("pot dt\t", (
+            str(datetime.timedelta(seconds = math.floor(cps[0] * duration / 800000))),
+            str(datetime.timedelta(seconds = math.floor(cps[1] * duration / 800000))),
+            str(datetime.timedelta(seconds = math.floor(cps[2] * duration / 800000)))
+        ))
 
 
 ###########
 # Helpers #
 ###########
 
-def loadData(server: int, event: int, interval: int, isFile: bool):
+def loadData(server: int, event: int, interval: int, isFile: bool) -> dict:
     fn = f'./e{event}.json'
 
     if isFile:
@@ -239,7 +251,7 @@ def main():
     # todo
     # cli input
 
-    data = loadData(server, event, interval, False)
+    data = loadData(server, event, interval, True)
 
     points = data["points"]
 
@@ -268,7 +280,7 @@ def main():
 
     for k, v in userData.items():
         print("user\t", k, userNames[k])
-        print("cp (l,m,h)\t", v.calculateCp())
+        v.calcAndPrintCps()
         print()
 
 if __name__ == '__main__':
