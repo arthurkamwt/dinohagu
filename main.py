@@ -7,7 +7,7 @@ import requests
 
 # consts
 # song duration + slack, in ms
-duration = 150000
+duration = 130000
 # multiplier from 3f to 200
 defaultMult = 4/3
 # cp earn rate
@@ -19,7 +19,7 @@ event = 153
 interval = 60000
 # startTime = 1605834126000 # e97
 startTime = 1652230800000 # e153
-
+isFile = False
 
 ###########################
 # Classes / class helpers #
@@ -48,7 +48,7 @@ class UserData:
         # self.zeroes = 0
         # self.bins = ([], [], [], [])
         self.setTsd(rawTsd)
-    
+
     # raw time series data: timestamp, value
     def setTsd(self, rawTsd: list[tuple[int, int]]):
         self.rawTsd = rawTsd
@@ -153,28 +153,8 @@ class UserData:
         exCount = (dt / duration) - sum(counts)
         exEv = math.ceil(exTotal / exCount)
 
-        # print("common")
-        # print("\ttotal\t", total)
-        # print("\tdt\t", dt)
-        # print("\tavgs\t", avgs)
-        # print("\tsums\t", sums)
-        # print("\tcounts\t", counts)
-
-        # print("hist")
-        # print("\thistoricalCp\t", historicalCp)
-
-        # print("exs")
-        # print("\texTotal\t", exTotal)
-        # print("\texCount\t", exCount)
-        # print("\texEv\t", exEv)
-        # print()
-        # print("\tdt\t", dt)
-        # print("\tcount * dur\t", sum(counts) * duration)
-        # print("\tdt / dur\t", math.ceil(dt / duration))
-        # print("\tsum counts\t", sum(counts))
-
         # cp/ep multiplier
-        cpepMult = avgs[1] / avgs[0] if avgs[0] > 0 else defaultMult
+        cpepMult = avgs[1] / avgs[0] if avgs[1] > 0 and avgs[0] > 0 else defaultMult
 
         if (counts[0] > 0):
             ev3f = avgs[0]
@@ -193,9 +173,30 @@ class UserData:
         p400 = max(round((exEv - ev3f) / (ev400 - ev3f), 4), 0)
         p800 = max(round((exEv - ev3f) / (ev800 - ev3f), 4), 0)
 
-        print("avgs\t", avgs)
-        print("exEv\t", exEv)
-        print("ex%cp\t", (p200, p400, p800))
+        print("common")
+        print("\tdt\t", dt)
+        print("\tavgs\t", avgs)
+        print("\tsums\t", sums)
+        print("\tcounts\t", counts)
+
+        print("hist")
+        print("\thistoricalCp\t", historicalCp)
+        print("\tsum counts\t", sum(counts))
+        print("\tsum count * dur\t", sum(counts) * duration)
+
+        print("exs")
+        print("\texTotal\t", exTotal)
+        print("\texCount\t", exCount)
+        print("\texEv\t", exEv)
+        print("\tcpepMult\t", cpepMult)
+        print("\tevs\t", (ev3f, ev200, ev400, ev800))
+        print("\tex%cp\t", (p200, p400, p800))
+        print()
+        print("\tdt\t", dt)
+        print("\tdt / dur\t", math.ceil(dt / duration))
+
+        # print("avgs\t", avgs)
+        # print("exEv\t", exEv)
 
         # cp = count * ((1 - px) * ev3f / 20 - px * x), x E { 200, 400, 800 }
         ev3f20 = math.ceil(ev3f / 20)
@@ -204,8 +205,9 @@ class UserData:
         cp400 = max(math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400))) + historicalCp, 0)
         cp800 = max(math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800))) + historicalCp, 0)
 
-        print("----")
         cps = (cp200, cp400, cp800)
+
+        print("total\t", total)
         print("cps\t", cps)
         print("pot pts\t", (
             math.ceil(cps[0] * ev800 / 800),
@@ -251,7 +253,7 @@ def main():
     # todo
     # cli input
 
-    data = loadData(server, event, interval, True)
+    data = loadData(server, event, interval, isFile)
 
     points = data["points"]
 
@@ -272,7 +274,7 @@ def main():
             t = int(p["time"])
             v = int(p["value"])
             t10[uid].append((t, v))
-    
+
     userData = { k : UserData(uid, v) for k, v in t10.items() }
 
     users = data["users"]
