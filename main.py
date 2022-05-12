@@ -19,7 +19,7 @@ event = 153
 interval = 60000
 # startTime = 1605834126000 # e97
 startTime = 1652230800000 # e153
-isFile = False
+isFile = True
 
 ###########################
 # Classes / class helpers #
@@ -177,32 +177,32 @@ class UserData:
         ev800 = avgs[3] if counts[3] > 0 else ev400 * 2
 
         # percentage of cp plays
-        p200 = max(round((exEv - ev3f) / (ev200 - ev3f), 4), 0)
-        p400 = max(round((exEv - ev3f) / (ev400 - ev3f), 4), 0)
-        p800 = max(round((exEv - ev3f) / (ev800 - ev3f), 4), 0)
+        p200 = round((exEv - ev3f) / (ev200 - ev3f), 4)
+        p400 = round((exEv - ev3f) / (ev400 - ev3f), 4)
+        p800 = round((exEv - ev3f) / (ev800 - ev3f), 4)
 
-        print("common")
-        print("\tdt\t", dt)
-        print("\tavgs\t", avgs)
-        print("\tsums\t", sums)
-        print("\tcounts\t", counts)
-        print("\tzeroess\t", zeroess)
+        # print("common")
+        # print("\tdt\t", dt)
+        # print("\tavgs\t", avgs)
+        # print("\tsums\t", sums)
+        # print("\tcounts\t", counts)
+        # print("\tzeroess\t", zeroess)
 
-        print("hist")
-        print("\thistoricalCp\t", historicalCp)
-        print("\tsum counts\t", sum(counts))
-        print("\tsum count * dur\t", sum(counts) * duration)
+        # print("hist")
+        # print("\thistoricalCp\t", historicalCp)
+        # print("\tsum counts\t", sum(counts))
+        # print("\tsum count * dur\t", sum(counts) * duration)
 
-        print("exs")
-        print("\texTotal\t", exTotal)
-        print("\texCount\t", exCount)
-        print("\texEv\t", exEv)
-        print("\tcpepMult\t", cpepMult)
-        print("\tevs\t", (ev3f, ev200, ev400, ev800))
-        print("\tex%cp\t", (p200, p400, p800))
-        print()
-        print("\tdt\t", dt)
-        print("\tdt / dur\t", math.ceil(dt / duration))
+        # print("exs")
+        # print("\texTotal\t", exTotal)
+        # print("\texCount\t", exCount)
+        # print("\texEv\t", exEv)
+        # print("\tcpepMult\t", cpepMult)
+        # print("\tevs\t", (ev3f, ev200, ev400, ev800))
+        # print("\tex%cp\t", (p200, p400, p800))
+        # print()
+        # print("\tdt\t", dt)
+        # print("\tdt / dur\t", math.ceil(dt / duration))
 
         # print("avgs\t", avgs)
         # print("exEv\t", exEv)
@@ -210,9 +210,29 @@ class UserData:
         # cp = count * ((1 - px) * ev3f / 20 - px * x), x E { 200, 400, 800 }
         ev3f20 = math.ceil(ev3f / 20)
 
-        cp200 = max(math.ceil(exCount * ((1 - p200) * ev3f20 - (p200 * 200))) + historicalCp, 0)
-        cp400 = max(math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400))) + historicalCp, 0)
-        cp800 = max(math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800))) + historicalCp, 0)
+        # if negative, that means suboptimal, so just take leftovers / 20
+        if p200 > 0:
+            cp200 = math.ceil(exCount * ((1 - p200) * ev3f20 - (p200 * 200)))
+        else:
+            cp200 = exTotal / 20
+    
+        if p400 > 0:
+            cp400 = math.ceil(exCount * ((1 - p400) * ev3f20 - (p400 * 400)))
+        else:
+            cp400 = exTotal / 20
+    
+        if p800 > 0:
+            cp800 = math.ceil(exCount * ((1 - p800) * ev3f20 - (p800 * 800)))
+        else:
+            cp800 = exTotal / 20
+
+        cp200 += historicalCp
+        cp400 += historicalCp
+        cp800 += historicalCp
+
+        cp200 = max(cp200, 0)
+        cp400 = max(cp400, 0)
+        cp800 = max(cp800, 0)
 
         cps = (cp200, cp400, cp800)
 
