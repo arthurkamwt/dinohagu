@@ -9,7 +9,7 @@ import requests
 
 # consts
 # song duration + slack, in ms
-DURATION = 130000
+DEFAULT_DURATION = 130000
 # multiplier from 3f to 200
 DEFAULT_MULT = 4/3
 # cp earn rate
@@ -158,16 +158,22 @@ def calculate(userData: UserData):
         round(zeroes * c / histCount) for c in binCounts
     )
 
+    # estimate the duration of plays
+    # reason: start/ 0 0 .. count /end, duration = sample frequency * (#of0s + 1) / 1
+    estDuration = INTERVAL * (histCount + zeroes) / histCount
+    # if wildly inaccurate, revert to
+    # estDuration = DEFAULT_DURATION
+
     # options:
     # 1. simple average = sum / count
-    # 2. average with slack = (sum / (count + zeroes)) * (DURATION / INTERVAL)
+    # 2. average with slack = (sum / (count + zeroes)) * (estDuration / INTERVAL)
     trueAvgs = tuple(
         (round(binSums[i] / c) if c > 0 else 0) for i, c in enumerate(binCounts)
     )
 
     # histAvgs = trueAvgs
     histAvgs = tuple(
-        round(binSums[i] / (c + zeroDist[i]) * (DURATION / INTERVAL) if c > 0 else 0) for i, c in enumerate(binCounts)
+        round(binSums[i] / (c + zeroDist[i]) * (estDuration / INTERVAL) if c > 0 else 0) for i, c in enumerate(binCounts)
     )
 
     # in case there is no data for any of the averages
@@ -192,7 +198,7 @@ def calculate(userData: UserData):
     # estimated total points
     estTotal = currentTotal - histTotal
     # estimated number of plays
-    estCount = (currentTIme / DURATION) - histCount
+    estCount = (currentTIme / estDuration) - histCount
     # estimated average points per game
     estAvg = round(estTotal / estCount)
 
@@ -221,7 +227,7 @@ def calculate(userData: UserData):
         )
     else:
         estCp1 = (round(estTotal / CPEP_RATE), 0)
-    
+
     d = cpCountDist[2]
     if d > 0:
         estCp2 = (
@@ -241,7 +247,7 @@ def calculate(userData: UserData):
     )
     # ...will take
     potentialTime = tuple(
-        datetime.timedelta(seconds = round(t * DURATION / 800000)) for t in totalCp
+        datetime.timedelta(seconds = round(t * estDuration / 800000)) for t in totalCp
     )
     # ...which will bring us up to...
     potentialTotal = tuple(
@@ -254,16 +260,24 @@ def calculate(userData: UserData):
     print('Name', userData.name, sep='\t')
     print('Id', userData.uid, sep='\t')
     print('Current time', datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000), sep='\t')
-    print('Current pts', currentTotal, sep='\t')
+    print('Current ep', currentTotal, sep='\t')
     print()
     print('--------')
     print('| Data |')
     print('--------')
+    print('Est. duration', datetime.timedelta(seconds = round(estDuration / 1000)), sep='\t')
+    print()
+    print('\t', 'Multi', 'cp200', 'cp400', 'cp800', sep='\t')
     print('Data points', *binCounts, sep='\t')
     print('Zero distrib', *zeroDist, sep='\t')
     print('True averages', *trueAvgs, sep='\t')
     print('Averages', *histAvgs, sep='\t')
     print('Est. averages', avg0, *burnAvgs, sep='\t')
+    print()
+    print('Extrapolate ep', estTotal, sep='\t')
+    print('Extrapolate count', estCount, sep='\t')
+    print('Extrapolate average', estAvg, sep='\t')
+    print('Extrapolate % cp', *cpCountDist, sep='\t')
     print()
     print('------')
     print('| CP |')
@@ -277,8 +291,8 @@ def calculate(userData: UserData):
     print()
     print('\t', 'Low', 'Mid', 'High', sep='\t')
     print('Est. avail cp', *totalCp, sep='\t')
-    print('Potential pts', *potentialPoints, sep='\t')
-    print('Potential total', *potentialTotal, sep='\t')
+    print('Potential +ep', *potentialPoints, sep='\t')
+    print('Potential ep', *potentialTotal, sep='\t')
     print('Potential time', *potentialTime, sep='\t')
     print()
     print('==========================================')
