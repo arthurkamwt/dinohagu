@@ -143,7 +143,7 @@ def calculate(userData: UserData):
     # known cp gains from ep + known cp consumed
     histCp = (
         round(binSums[0] / CPEP_RATE),
-        (binCounts[1] * 200) + (binCounts[2] * 400) + (binCounts[3] * 800)
+        -(binCounts[1] * 200) + (binCounts[2] * 400) + (binCounts[3] * 800)
     )
 
 
@@ -208,7 +208,7 @@ def calculate(userData: UserData):
     if d > 0:
         estCp0 = (
             round(estCount * ((1 - d) * avg0rate)),
-            round(estCount * d * 200)
+            -round(estCount * d * 200)
         )
     else:
         estCp0 = (round(estTotal / CPEP_RATE), 0)
@@ -217,7 +217,7 @@ def calculate(userData: UserData):
     if d > 0:
         estCp1 = (
             round(estCount * ((1 - d) * avg0rate)),
-            round(estCount * d * 400)
+            -round(estCount * d * 400)
         )
     else:
         estCp1 = (round(estTotal / CPEP_RATE), 0)
@@ -226,14 +226,14 @@ def calculate(userData: UserData):
     if d > 0:
         estCp2 = (
             round(estCount * ((1 - d) * avg0rate)),
-            round(estCount * d * 800)
+            -round(estCount * d * 800)
         )
     else:
         estCp2 = (round(estTotal / CPEP_RATE), 0)
 
     estCp = (estCp0, estCp1, estCp2)
     totalCp = tuple(
-        sum(e) + sum(histCp) for e in estCp
+        max(sum(e) + sum(histCp), 0) for e in estCp
     )
     # convert all cp to points...
     potentialPoints = tuple(
@@ -268,12 +268,12 @@ def calculate(userData: UserData):
     print('------')
     print('| CP |')
     print('------')
-    print('\t', 'Gains', 'Loss', sep='\t')
-    print('Historical', *histCp, sep='\t')
+    print('\t', 'Gains', 'Loss', 'Net', sep='\t')
+    print('Historical', *histCp, sum(histCp), sep='\t')
     print()
-    print('Est. low', *estCp0, sep='\t')
-    print('Est. mid', *estCp1, sep='\t')
-    print('Est. high', *estCp2, sep='\t')
+    print('Est. low', *estCp0, sum(estCp0), sep='\t')
+    print('Est. mid', *estCp1, sum(estCp1), sep='\t')
+    print('Est. high', *estCp2, sum(estCp2), sep='\t')
     print()
     print('\t', 'Low', 'Mid', 'High', sep='\t')
     print('Est. avail cp', *totalCp, sep='\t')
