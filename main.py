@@ -105,6 +105,7 @@ def loadData(server: int, event: int, interval: int, isFile: bool) -> dict:
     return j
 
 def getTop10(points: list) -> dict:
+    # assumes points are listed in increasing time
     last10 = points[-10:]
     # verify last 10 has same timestamp
     lastTs = last10[-1]['time']
@@ -252,6 +253,8 @@ def calculate(userData: UserData):
     print('--------')
     print('Name', userData.name, sep='\t')
     print('Id', userData.uid, sep='\t')
+    print('Current time', datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000), sep='\t')
+    print('Current pts', currentTotal, sep='\t')
     print()
     print('--------')
     print('| Data |')
