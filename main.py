@@ -2,26 +2,27 @@
 
 import argparse
 import datetime
-import math
 import json
+import os
 import sys
 import requests
 
 # consts
 # song duration + slack, in ms
-DEFAULT_DURATION = 130000
+DEFAULT_DURATION = 135000
 # multiplier from 3f to 200
 DEFAULT_MULT = 4/3
 # cp earn rate
 CPEP_RATE = 20
 INTERVAL = 60000
+DATE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S %z'
 
 # vars
 SERVER = 1
 EVENT = 153
-# startTime = 1605834126000 # e97
 START_TIME = 1652230800000 # e153
-DATE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S %z'
+
+hook = os.environ.get('HOOK')
 
 class UserData:
     def __init__(self, uid: str, name: str, rawTsd: list[tuple[int, int]]):
@@ -105,7 +106,7 @@ def loadData(server: int, event: int, interval: int, isFile: bool) -> dict:
         f.write(json.dumps(j))
     return j
 
-def getTop10(points: list) -> dict:
+def getTop10(points: list, filter: list) -> dict:
     # assumes points are listed in increasing time
     last10 = points[-10:]
     # verify last 10 has same timestamp
@@ -114,7 +115,7 @@ def getTop10(points: list) -> dict:
         assert last['time'] == lastTs
 
     # top 10 users, list of (dt from start, dv from previous, value)
-    t10: dict[str, list] = { e['uid'] : [] for e in last10 }
+    t10: dict[str, list] = { e['uid'] : [] for e in last10 if filter == None or str(e['uid']) in filter }
     # aggregate top 10 user data
     for p in points:
         uid = p['uid']
@@ -125,7 +126,7 @@ def getTop10(points: list) -> dict:
 
     return t10
 
-def calculate(userData: UserData):
+def calculate(userData: UserData, debug: bool):
     currentTotal = userData.getCurrentTotal()
     currentTIme = userData.getCurrentTime()
 
@@ -248,78 +249,100 @@ def calculate(userData: UserData):
     potentialPoints = tuple(
         round(t * avg3 / 800) for t in totalCp
     )
-    # ...will take
+    # ...will take? maybe use DEFAULT_DURATION?
     potentialTime = tuple(
-        datetime.timedelta(seconds = round(t * estDuration / 800000)) for t in totalCp
+        datetime.timedelta(seconds = round(t * DEFAULT_DURATION / 800000)) for t in totalCp
     )
     # ...which will bring us up to...
     potentialTotal = tuple(
         p + currentTotal for p in potentialPoints
     )
 
-    print('--------')
-    print('| User |')
-    print('--------')
-    print('Name', userData.name, sep='\t')
-    print('Id', userData.uid, sep='\t')
-    print('Current time', datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000).strftime(DATE_TIME_FORMAT), sep='\t')
-    print('Current ep', currentTotal, sep='\t')
-    print()
-    print('--------')
-    print('| Data |')
-    print('--------')
-    print('Est. duration', datetime.timedelta(seconds = round(estDuration / 1000)), sep='\t')
-    print()
-    print('\t', 'Multi', 'cp200', 'cp400', 'cp800', sep='\t')
-    print('Data points', *binCounts, sep='\t')
-    print('Zero distrib', *zeroDist, sep='\t')
-    print('True averages', *trueAvgs, sep='\t')
-    print('Averages', *histAvgs, sep='\t')
-    print('Est. averages', avg0, *burnAvgs, sep='\t')
-    print()
-    print('Extrapolate ep', estTotal, sep='\t')
-    print('Extrapolate count', estCount, sep='\t')
-    print('Extrapolate average', estAvg, sep='\t')
-    print('Extrapolate % cp', *cpCountDist, sep='\t')
-    print()
-    print('------')
-    print('| CP |')
-    print('------')
-    print('\t', 'Gains', 'Loss', 'Net', sep='\t')
-    print('Historical', *histCp, sum(histCp), sep='\t')
-    print()
-    print('Est. low', *estCp0, sum(estCp0), sep='\t')
-    print('Est. mid', *estCp1, sum(estCp1), sep='\t')
-    print('Est. high', *estCp2, sum(estCp2), sep='\t')
-    print()
-    print('\t', 'Low', 'Mid', 'High', sep='\t')
-    print('Est. avail cp', *totalCp, sep='\t')
-    print('Potential +ep', *potentialPoints, sep='\t')
-    print('Potential ep', *potentialTotal, sep='\t')
-    print('Potential time', *potentialTime, sep='\t')
-    print()
-    print('==========================================')
-    print()
+    LEFT = 16
+    MID = 10
 
-def main():
-    parser = argparse.ArgumentParser(description = 'todo')
-    parser.add_argument('--use-file', dest='is_file', action='store_true')
-    parser.add_argument('-d', '--debug', dest='debug', action='store_true')
-    args = parser.parse_args(sys.argv[1:])
+    sdata = (
+        f'--------\n'
+        f'| User |\n'
+        f'--------\n'
+        f'{"Name":<{LEFT}}{userData.name}\n'
+        f'{"Id":<{LEFT}}{userData.uid}\n'
+        f'{"Current time":<{LEFT}}{datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000)}\n'
+        f'{"Current ep":<{LEFT}}{currentTotal}\n'
+        f'\n'
+    )
+
+    if debug:
+        sdata += (
+            f'---------\n'
+            f'| Debug |\n'
+            f'---------\n'
+            f'{"Est. duration":<{LEFT}}{datetime.timedelta(seconds = round(estDuration / 1000))}\n'
+            f'\n'
+            f'{"":<{LEFT}}{"Multi":<{MID}}{"cp200":<{MID}}{"cp400":<{MID}}{"cp800":<{MID}}\n'
+            f'{"Data points":<{LEFT}}{"".join(str(s).ljust(MID) for s in binCounts)}\n'
+            f'{"Zero distrib":<{LEFT}}{"".join(str(s).ljust(MID) for s in zeroDist)}\n'
+            f'{"True averages":<{LEFT}}{"".join(str(s).ljust(MID) for s in trueAvgs)}\n'
+            f'{"Averages":<{LEFT}}{"".join(str(s).ljust(MID) for s in histAvgs)}\n'
+            f'{"Est. averages":<{LEFT}}{avg0:<{MID}}{"".join(str(s).ljust(MID) for s in burnAvgs)}\n'
+            f'\n'
+            f'{"Est. ep":<{LEFT}}{estTotal}\n'
+            f'{"Est. count":<{LEFT}}{estCount}\n'
+            f'{"Est. average":<{LEFT}}{estAvg}\n'
+            f'{"Est. % cp":<{LEFT}}{"".join(str(s).ljust(MID) for s in cpCountDist)}\n'
+            f'\n'
+        )
+
+    sdata += (
+        f'------\n'
+        f'| CP |\n'
+        f'------\n'
+        f'{"":<{LEFT}}{"Gains":<{MID}}{"Loss":<{MID}}{"Net":<{MID}}\n'
+        f'{"Historical":<{LEFT}}{"".join(str(s).ljust(MID) for s in [*histCp, sum(histCp)])}\n'
+        f'\n'
+        f'{"Est. low":<{LEFT}}{"".join(str(s).ljust(MID) for s in [*estCp0, sum(estCp0)])}\n'
+        f'{"Est. mid":<{LEFT}}{"".join(str(s).ljust(MID) for s in [*estCp1, sum(estCp1)])}\n'
+        f'{"Est. high":<{LEFT}}{"".join(str(s).ljust(MID) for s in [*estCp2, sum(estCp2)])}\n'
+        f'\n'
+        f'{"":<{LEFT}}{"Low":<{MID}}{"Mid":<{MID}}{"High":<{MID}}\n'
+        f'{"Est. avail cp":<{LEFT}}{"".join(str(s).ljust(MID) for s in totalCp)}\n'
+        f'{"Projected +ep":<{LEFT}}{"".join(str(s).ljust(MID) for s in potentialPoints)}\n'
+        f'{"Projected ep":<{LEFT}}{"".join(str(s).ljust(MID) for s in potentialTotal)}\n'
+        f'{"Projected time":<{LEFT}}{"".join(str(s).ljust(MID) for s in potentialTime)}\n'
+    )
+
+    if hook != None:
+        sdata = f'```\n{sdata}```'.replace('\n', '\\n').replace('\t', '\\t')
+        jdata = f'{{ "content" : "{sdata}"}}'
+        requests.post(hook, headers={'Content-Type':'application/json'}, data=jdata)
+    else:
+        print(sdata)
+
+def main(isFile, filters, debug):
 
     # read data
-    data = loadData(SERVER, EVENT, INTERVAL, args.is_file)
+    data = loadData(SERVER, EVENT, INTERVAL, isFile)
 
     # split data
     points = data['points']
     userNames = { u['uid'] : u['name'] for u in data['users'] }
 
-    t10 = getTop10(points)
+    t10 = getTop10(points, filters)
 
     userData = [ UserData(k, userNames[k], v) for k, v in t10.items() ]
 
     for v in userData:
-        calculate(v)
+        calculate(v, debug)
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description = 'todo')
+    parser.add_argument('--use-file', dest='is_file', action='store_true')
+    parser.add_argument('-d', '--debug', dest='debug', action='store_true')
+    parser.add_argument('-f', '--filter', dest='filters', nargs='*')
+    args = parser.parse_args(sys.argv[1:])
+
+    isFile = args.is_file
+    filters = args.filters
+    debug = args.debug
+
+    main(isFile, filters, debug)
