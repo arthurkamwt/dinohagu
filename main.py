@@ -21,6 +21,7 @@ SERVER = 1
 EVENT = 153
 # startTime = 1605834126000 # e97
 START_TIME = 1652230800000 # e153
+DATE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S %z'
 
 class UserData:
     def __init__(self, uid: str, name: str, rawTsd: list[tuple[int, int]]):
@@ -203,8 +204,10 @@ def calculate(userData: UserData):
     estAvg = round(estTotal / estCount)
 
     # percentage of cp plays
+    # if p > 1, there is no way to achieve this score at this cp burn rate, then we assume they tried
+    # if p < 0, user did not meet expected multi average, then we assume all points came from multi
     cpCountDist = tuple(
-        round((estAvg - avg0) / (a - avg0), 4) for a in burnAvgs
+        min(round((estAvg - avg0) / (a - avg0), 4), 1) for a in burnAvgs
     )
 
     # convenience
@@ -259,7 +262,7 @@ def calculate(userData: UserData):
     print('--------')
     print('Name', userData.name, sep='\t')
     print('Id', userData.uid, sep='\t')
-    print('Current time', datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000), sep='\t')
+    print('Current time', datetime.datetime.fromtimestamp((userData.tsd[-1][0] + START_TIME) / 1000).strftime(DATE_TIME_FORMAT), sep='\t')
     print('Current ep', currentTotal, sep='\t')
     print()
     print('--------')
@@ -301,6 +304,7 @@ def calculate(userData: UserData):
 def main():
     parser = argparse.ArgumentParser(description = 'todo')
     parser.add_argument('--use-file', dest='is_file', action='store_true')
+    parser.add_argument('-d', '--debug', dest='debug', action='store_true')
     args = parser.parse_args(sys.argv[1:])
 
     # read data
