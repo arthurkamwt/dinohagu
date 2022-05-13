@@ -144,7 +144,7 @@ def calculate(userData: UserData):
     # known cp gains from ep + known cp consumed
     histCp = (
         round(binSums[0] / CPEP_RATE),
-        -(binCounts[1] * 200) + (binCounts[2] * 400) + (binCounts[3] * 800)
+        -(binCounts[1] * 200) - (binCounts[2] * 400) - (binCounts[3] * 800)
     )
 
 
