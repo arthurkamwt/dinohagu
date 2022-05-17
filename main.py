@@ -276,7 +276,7 @@ def calculate(userData: UserData, debug: bool):
         f'{"":<{LEFT}}{"Gain":<{MID}}{"Loss":<{MID}}{"Net":<{MID}}\n'
         f'{"Known cp":<{LEFT}}{"".join(str(s).ljust(MID) for s in knownCp)}\n'
         f'\n'
-        f'{"Est. method":<{LEFT}}{"Linear":<{MID}}{"Low":<{MID}}{"Mid":<{MID}}{"High":<{MID}}{"Peak":<{MID}}\n'
+        f'{"Est. method":<{LEFT}}{"Linear":<{MID}}{"% Low":<{MID}}{"% Mid":<{MID}}{"% High":<{MID}}{"Peak":<{MID}}\n'
         f'{"Unknown cp":<{LEFT}}{"".join(str(round(s)).ljust(MID) for s in unknownCp)}\n'
         f'\n'
         f'{"Est. avail cp":<{LEFT}}{"".join(str(round(s)).ljust(MID) for s in totalCp)}\n'
