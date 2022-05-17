@@ -23,30 +23,40 @@ START_TIME = 1652230800000 # e153
 HOOK = os.environ.get('HOOK')
 
 class UserData:
-    def __init__(self, uid: str, name: str, rawTsd: list[tuple[int, int]]):
+    def __init__(self, uid: str, name: str, raw: list[tuple[int, int]]):
         self.uid = uid
         self.name = name
 
         # rawTsd (absolute time, value)
         # tsd (normalized time, value)
-        self.tsd = [ (r[0] - START_TIME, r[1]) for r in rawTsd ]
+        self.tsd = [ (r[0] - START_TIME, r[1]) for r in raw ]
+
+        # save debug
+        # f = open('tsd', 'w')
+        # f.writelines([f'{x[0]}\t{x[1]}\n' for x in self.tsd])
+        # f.close()
 
         # first derivative
         self.d1tsd = []
         # bins
         self.bins = ([], [], [], [])
 
+        games = 0
+
         # populate
+        accum = 0
         prev = (0, 0)
         for entry in self.tsd:
             dt = entry[0] - prev[0]
             dv = entry[1] - prev[1]
+            prev = entry
 
             if dv == 0:
+                accum += dt
                 continue
-            
+
             # interpolate in case of big gaps of intervals
-            dv = dv if dt < (INTERVAL * 1.2) else round(dv * duration / dt)
+            dv = dv if dt < (INTERVAL * 1.2) else round(dv * duration / (dt + accum))
 
             if dv < 7000:
                 self.bins[0].append(dv)
@@ -58,7 +68,10 @@ class UserData:
                 self.bins[3].append(dv)
             # we don't actually need dt
             self.d1tsd.append((dt, dv))
-            prev = entry
+            games += 1
+            accum = 0
+
+        self.timePerGame = INTERVAL * len(raw) / games
 
     def getCurrentTime(self) -> int:
         if len(self.tsd) > 0:
@@ -101,6 +114,7 @@ def loadData(server: int, event: int, interval: int, isFile: bool) -> dict:
         # prod
         url = f'https://bestdori.com/api/eventtop/data?server={server}&event={event}&mid=0&interval={interval}'
         j = requests.get(url).json()
+        # save debug
         # f = open(fn, 'w')
         # f.write(json.dumps(j))
         # f.close()
@@ -128,12 +142,14 @@ def getTop10(points: list, filter: list) -> dict:
 
 def calculate(userData: UserData, debug: bool):
     totalEp = userData.getCurrentTotal()
+    totalTime = userData.getCurrentTime()
 
     binSums = userData.getBinSums()
     binCounts = userData.getBinCounts()
 
     # total known points and rounds played
     knownEp = sum(binSums)
+    knownTime = len(userData.tsd) * INTERVAL
 
     ############
     # known cp #
@@ -157,7 +173,7 @@ def calculate(userData: UserData, debug: bool):
             avg0 = a * DEFAULT_MULT[i]
             break
     
-    avg1 = trueAvgs[1] if trueAvgs[1] > 0 else avg0 * DEFAULT_MULT[1]
+    avg1 = trueAvgs[1] if trueAvgs[1] > 0 else round(avg0 * DEFAULT_MULT[1])
     avg2 = trueAvgs[2] if trueAvgs[2] > 0 else avg1 * 2
     avg3 = trueAvgs[3] if trueAvgs[3] > 0 else avg2 * 2
 
@@ -167,17 +183,30 @@ def calculate(userData: UserData, debug: bool):
     # unknown cp #
     ##############
 
-    # estimated total points
     unknownEp = totalEp - knownEp
-    
-    # peak, just / 20
+
+    # 1. peak, just / 20
     unknownPeakCp = unknownEp / CPEP_RATE
 
-    # at the current rate
+    # 2. at the current rate
     knownEp = sum(binSums)
     unknownLinearCp = knownCp[2] * unknownEp / knownEp
 
-    unknownCp = (unknownLinearCp, unknownPeakCp)
+    # 3. estimated percentages
+    unknownTime = totalTime - knownTime
+    unknownGames = unknownTime / userData.timePerGame
+    unknownEpPerGame = unknownEp / unknownGames
+
+    unknownPercent = tuple(
+        max(min((unknownEpPerGame - knownAvgs[0]) / (knownAvgs[i] - knownAvgs[0]), 1), 0) for i in [1, 2, 3]
+    )
+
+    unknownPercentCp = tuple(
+        ((1-unknownPercent[i-1]) * knownAvgs[0] * unknownGames / CPEP_RATE) - (unknownPercent[i-1] * unknownGames * 100 * 2**i) for i in [1, 2, 3]
+    )
+
+    # cp results
+    unknownCp = (unknownLinearCp, *unknownPercentCp, unknownPeakCp)
     totalCp = tuple(
         max(x + knownCp[2], 0) for x in unknownCp
     )
@@ -190,7 +219,6 @@ def calculate(userData: UserData, debug: bool):
     projectedTime = tuple(
         duration * x / 800 for x in totalCp
     )
-
 
     LEFT = 16
     MID = 10
@@ -212,14 +240,32 @@ def calculate(userData: UserData, debug: bool):
             f'| Debug |\n'
             f'---------\n'
             f'\n'
-            f'{"Duration":<{LEFT}}{datetime.timedelta(seconds = round(duration / 1000))}\n'
+            f'Total\n'
+            f'-----\n'
+            f'{"ep":<{LEFT}}{totalEp}\n'
+            f'{"time":<{LEFT}}{totalTime}\n'
+            f'{"Time/game":<{LEFT}}{datetime.timedelta(seconds = round(duration / 1000))}\n'
+            f'\n'
+            f'Known\n'
+            f'-----\n'
+            f'{"ep":<{LEFT}}{knownEp}\n'
+            f'{"time":<{LEFT}}{knownTime}\n'
+            f'{"Est. time/game":<{LEFT}}{datetime.timedelta(seconds = round(userData.timePerGame / 1000))}\n'
             f'\n'
             f'{"":<{LEFT}}{"Multi":<{MID}}{"cp200":<{MID}}{"cp400":<{MID}}{"cp800":<{MID}}\n'
             f'{"Data points":<{LEFT}}{"".join(str(s).ljust(MID) for s in binCounts)}\n'
             f'{"True averages":<{LEFT}}{"".join(str(s).ljust(MID) for s in trueAvgs)}\n'
             f'{"Known averages":<{LEFT}}{"".join(str(s).ljust(MID) for s in knownAvgs)}\n'
             f'\n'
-            f'{"Unknown ep":<{LEFT}}{unknownEp}\n'
+            f'Unknown\n'
+            f'-------\n'
+            f'{"ep":<{LEFT}}{unknownEp}\n'
+            f'{"time":<{LEFT}}{unknownTime}\n'
+            f'{"games":<{LEFT}}{unknownGames}\n'
+            f'{"ep/game":<{LEFT}}{unknownEpPerGame}\n'
+            f'\n'
+            f'{"":<{LEFT}}{"".join(s.ljust(MID) for s in ["Cp200", "Cp400", "Cp800"])}\n'
+            f'{"% cp":<{LEFT}}{"".join(str(round(s, 4)).ljust(MID) for s in unknownPercent)}\n'
             f'\n'
         )
 
@@ -230,7 +276,7 @@ def calculate(userData: UserData, debug: bool):
         f'{"":<{LEFT}}{"Gain":<{MID}}{"Loss":<{MID}}{"Net":<{MID}}\n'
         f'{"Known cp":<{LEFT}}{"".join(str(s).ljust(MID) for s in knownCp)}\n'
         f'\n'
-        f'{"Est. method":<{LEFT}}{"Linear":<{MID}}{"Peak":<{MID}}\n'
+        f'{"Est. method":<{LEFT}}{"Linear":<{MID}}{"Low":<{MID}}{"Mid":<{MID}}{"High":<{MID}}{"Peak":<{MID}}\n'
         f'{"Unknown cp":<{LEFT}}{"".join(str(round(s)).ljust(MID) for s in unknownCp)}\n'
         f'\n'
         f'{"Est. avail cp":<{LEFT}}{"".join(str(round(s)).ljust(MID) for s in totalCp)}\n'
@@ -251,7 +297,7 @@ def calculate(userData: UserData, debug: bool):
 
 def main(isFile, filters, debug, iduration):
     global duration
-    duration = iduration if iduration != None else 135000
+    duration = iduration if iduration != None else 150000
 
     # read data
     data = loadData(SERVER, EVENT, INTERVAL, isFile)
